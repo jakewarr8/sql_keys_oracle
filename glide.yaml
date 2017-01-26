@@ -1,0 +1,5 @@
+package: .
+import:
+- package: github.com/gorilla/mux
+- package: github.com/mattn/go-oci8
+- package: github.com/nu7hatch/gouuid
