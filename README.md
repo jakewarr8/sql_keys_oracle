@@ -7,20 +7,20 @@ POST: http://hostname:8800/creds
 Header: Content-Type = application/json
 Body: {"connection":"username/password@DBURL:PORT"}
 
-Response: {"key":"a5c44a8f-bc74-4e49-6fec-f5701548a1e1","status":200}
+Response: {"key":"a5c44a8f-bc74-4e49-6fec-f5701548a1e1"}
 
 ```
 ```
 POST: http://hostname:8800/query
 Header: Content-Type = application/json
-Body: {"key":"a5c44a8f-bc74-4e49-6fec-f5701548a1e1", "query":"select * mytable;"}
+Body: {"key":"a5c44a8f-bc74-4e49-6fec-f5701548a1e1", "query":"select * mytable"}
 
 Response:
 {
-  "data": {
-    "column1": "123",
-    "column2": "456",
-  },
+  "data": [
+    {"column1": "tim", "column2": "cook"},
+    {"column1": "joe", "column2": "cool"}
+  ],
   "qkey": "9e0902b9-d693-468d-4312-4427f02482dd"
 }
 ```
@@ -28,10 +28,10 @@ Response:
 GET: http://hostname:8800/query/9e0902b9-d693-468d-4312-4427f02482dd
 
 Response:
-{
-  "column1": "123",
-  "column2": "456"
-}
+[
+  {"column1": "tim", "column2": 1022},
+  {"column1": "joe", "column2": 1011}
+]
 ```
 
 ## Build
@@ -69,6 +69,6 @@ Libs: -L${libdir} -lclntsh
 
 Then set mattn-oci8 needed env variable.
 ```
-export PKG_CONFIG_PATH=$HOME/src/oracle-json/vendor/github.com/mattn/go-oci8/
+export PKG_CONFIG_PATH=$HOME/src/sql_keys_oracle/vendor/github.com/mattn/go-oci8/
 go build
 ```

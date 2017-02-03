@@ -9,7 +9,6 @@ import (
 	"github.com/nu7hatch/gouuid"
 	"log"
 	"net/http"
-	"strings"
 )
 
 type FrontEnd struct {
@@ -19,8 +18,8 @@ type FrontEnd struct {
 type DataHandler interface {
 	NewDB(string, string) (string, error)
 	NewQuery(string, string) (string, error)
-	QueryKey(string) (map[string]interface{}, error)
-	QueryDBC(string, string) (map[string]interface{}, error)
+	QueryKey(string) (interface{}, error)
+	QueryDBC(string, string) (interface{}, error)
 }
 
 type DBS struct {
@@ -69,16 +68,32 @@ func NewRouter(dbs DataHandler) *mux.Router {
 	return router
 }
 
+// Takes an interface and marshals to json
+// Returns byte slice of json
+func encode(mjson interface{}) []byte {
+	encoded, err := json.Marshal(mjson)
+	if err == nil {
+		return encoded
+	}
+	log.Println(err)
+	return []byte(`{"err": "internal server error while marshalling error message"}`)
+}
+
 // Post credtials connection url
 // 200 returns url to query
 // 406 if fails
 func (fe FrontEnd) PostCREDS(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	mjson := make(map[string]interface{})
+
 	decoder := json.NewDecoder(r.Body)
 	var t CredsJSON
 	err := decoder.Decode(&t)
 	if err != nil {
 		log.Println(err)
+		mjson["err"] = err.Error()
 		w.WriteHeader(http.StatusNotAcceptable)
+		w.Write(encode(mjson))
 		return
 	}
 	defer r.Body.Close()
@@ -86,34 +101,33 @@ func (fe FrontEnd) PostCREDS(w http.ResponseWriter, r *http.Request) {
 	key, err := fe.NewDB("oci8", t.Cnt)
 	if err != nil {
 		log.Println(err)
+		mjson["err"] = err.Error()
 		w.WriteHeader(http.StatusNotAcceptable)
+		w.Write(encode(mjson))
 		return
 	}
 
-	mjson := make(map[string]interface{})
 	mjson["key"] = key
-	mjson["status"] = 200
 
-	w.Header().Set("Content-Type", "application/json; charset=UTF-8")
 	w.WriteHeader(http.StatusOK)
-
-	if err := json.NewEncoder(w).Encode(mjson); err != nil {
-		log.Println(err)
-		return
-	}
-
+	w.Write(encode(mjson))
 }
 
 // Post query for given key
 // 200 returns json map of query response
 // 406 if fails
 func (fe FrontEnd) PostQUERY(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	mjson := make(map[string]interface{})
+
 	decoder := json.NewDecoder(r.Body)
 	var t QueryJSON
 	err := decoder.Decode(&t)
 	if err != nil {
 		log.Println(err)
+		mjson["err"] = err.Error()
 		w.WriteHeader(http.StatusNotAcceptable)
+		w.Write(encode(mjson))
 		return
 	}
 	defer r.Body.Close()
@@ -121,52 +135,49 @@ func (fe FrontEnd) PostQUERY(w http.ResponseWriter, r *http.Request) {
 	data, err := fe.QueryDBC(t.Key, t.Query)
 	if err != nil {
 		log.Println(err)
+		mjson["err"] = err.Error()
 		w.WriteHeader(http.StatusNotAcceptable)
+		w.Write(encode(mjson))
 		return
 	}
 
 	qkey, err := fe.NewQuery(t.Key, t.Query)
 	if err != nil {
 		log.Println(err)
+		mjson["err"] = err.Error()
 		w.WriteHeader(http.StatusNotAcceptable)
+		w.Write(encode(mjson))
 		return
 	}
 
-	mjson := make(map[string]interface{})
 	mjson["data"] = data
 	mjson["qkey"] = qkey
 
-	w.Header().Set("Content-Type", "application/json; charset=UTF-8")
 	w.WriteHeader(http.StatusOK)
-
-	if err := json.NewEncoder(w).Encode(mjson); err != nil {
-		log.Println(err)
-		return
-	}
-
+	w.Write(encode(mjson))
 }
 
 // Get a saved query for given querykey
 // 200 returns json map of query response
 // 406 if fails
 func (fe FrontEnd) GetQUERY(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
 	vars := mux.Vars(r)
 	qkey := vars["qkey"]
 
 	mjson, err := fe.QueryKey(qkey)
 	if err != nil {
 		log.Println(err)
+		errjson := make(map[string]interface{})
+		errjson["err"] = err.Error()
 		w.WriteHeader(http.StatusNotAcceptable)
+		w.Write(encode(errjson))
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json; charset=UTF-8")
 	w.WriteHeader(http.StatusOK)
-
-	if err := json.NewEncoder(w).Encode(mjson); err != nil {
-		log.Println(err)
-		return
-	}
+	w.Write(encode(mjson))
 }
 
 // Takes SQLDatatype and connection string
@@ -203,7 +214,7 @@ func (dbs DBS) NewQuery(key string, query string) (string, error) {
 
 // Takes querykey
 // Returns Query
-func (dbs DBS) QueryKey(qkey string) (map[string]interface{}, error) {
+func (dbs DBS) QueryKey(qkey string) (interface{}, error) {
 	if q, ok := dbs.queries[qkey]; ok {
 		return dbs.QueryDBC(q.dbckey, q.query)
 	} else {
@@ -213,7 +224,7 @@ func (dbs DBS) QueryKey(qkey string) (map[string]interface{}, error) {
 
 // Takes dbcKey and query string
 // Returns DB rows or err
-func (dbs DBS) QueryDBC(key string, query string) (map[string]interface{}, error) {
+func (dbs DBS) QueryDBC(key string, query string) (interface{}, error) {
 	if _, ok := dbs.dbcs[key]; !ok {
 		return nil, errors.New("key does not exist")
 	}
@@ -225,20 +236,32 @@ func (dbs DBS) QueryDBC(key string, query string) (map[string]interface{}, error
 	}
 
 	defer rows.Close()
-
-	s := make(map[string]interface{})
-
-	for rows.Next() {
-		var column string
-		var value interface{}
-		err = rows.Scan(&column, &value)
-		if err != nil {
-			return nil, err
-		} else {
-			column = strings.Replace(column, " ", "_", -1)
-			s[column] = value
-		}
+	columns, err := rows.Columns()
+	if err != nil {
+		return nil, err
 	}
 
-	return s, nil
+	values := make([]interface{}, len(columns))
+	valuePtrs := make([]interface{}, len(columns))
+	final_result := make(map[string][]map[string]interface{})
+
+	for rows.Next() {
+		for i, _ := range columns {
+			valuePtrs[i] = &values[i]
+		}
+
+		err = rows.Scan(valuePtrs...)
+		if err != nil {
+			return nil, err
+		}
+
+		var tmp_struct = make(map[string]interface{})
+		for i, col := range columns {
+			tmp_struct[col] = values[i]
+		}
+
+		final_result["data"] = append(final_result["data"], tmp_struct)
+	}
+
+	return final_result["data"], nil
 }
